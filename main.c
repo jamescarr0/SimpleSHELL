@@ -3,10 +3,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <errno.h>
 
+#define PROMPT "(simple shell) ~ $ "
 #define RESET_TEXT_COLOR "\x1b[0m"
 #define RED_TEXT "\x1b[31m"
-
 #define TOKEN_BUFSIZE 32
 
 typedef struct {
@@ -14,75 +15,80 @@ typedef struct {
     size_t buffer_length;
     ssize_t input_length;
     char *bufferTokens;
-} InputBuffer;
+} input_buffer_t;
 
-InputBuffer *newInputBuffer() {
-    InputBuffer *input_buffer = malloc(sizeof(InputBuffer));
+input_buffer_t *new_input_buffer() {
+    input_buffer_t *input_buffer = malloc(sizeof(input_buffer_t));
     input_buffer->buffer = NULL;
     input_buffer->buffer_length = 0;
     input_buffer->input_length = 0;
     return input_buffer;
 }
 
-void print_prompt() { printf("$>"); }
+void print_prompt() { printf(PROMPT); }
 
-void read_input(InputBuffer *inputBuffer) {
+void read_input(input_buffer_t *const input_buffer) {
 
-    ssize_t bytesRead = getline(&(inputBuffer->buffer), &
-            (inputBuffer->buffer_length), stdin);
+    ssize_t bytes_read = getline(&(input_buffer->buffer), &
+            (input_buffer->buffer_length), stdin);
 
-    if (bytesRead < 0) {
+    if (bytes_read < 0) {
         printf("Error reading input\n");
         exit(EXIT_FAILURE);
     }
     // Remove trailing newline
-    inputBuffer->buffer_length = bytesRead - 1;
-    inputBuffer->buffer[bytesRead - 1] = '\0';
+    input_buffer->buffer_length = bytes_read - 1;
+    input_buffer->buffer[bytes_read - 1] = '\0';
 }
 
-void closeInputBuffer(InputBuffer *inputBuffer) {
-    free(inputBuffer->buffer);
-    inputBuffer->buffer = NULL;
-    free(inputBuffer);
-    inputBuffer = NULL;
+void close_input_buffer(input_buffer_t *input_buffer) {
+    free(input_buffer->buffer);
+    input_buffer->buffer = NULL;
+    free(input_buffer);
+    input_buffer = NULL;
 }
 
-void printCmdNotFound(char *errMsg) {
+void print_cmd_not_found(char const *const err_msg) {
     printf("%sError:%s '%s' command not found\n", RED_TEXT,
-           RESET_TEXT_COLOR, errMsg);
+           RESET_TEXT_COLOR, err_msg);
 }
 
-char **createTokens(InputBuffer *inputBuffer) {
-    int tokenBufSize = TOKEN_BUFSIZE;
-    int tokenPosition = 0;
+void print_error(char const *const err_msg) {
+    printf("%sError:%s '%s'\n", RED_TEXT,
+           RESET_TEXT_COLOR, err_msg);
+}
 
-    char *savePosition = NULL;
-    char *token = strtok_r(inputBuffer->buffer, " ", &savePosition);
+char **create_tokens(input_buffer_t *const inputBuffer) {
+    int tkn_buf_size = TOKEN_BUFSIZE;
+    int tkn_position = 0;
 
-    char **tokens = malloc(sizeof(char *) * tokenBufSize);
+    char *save_position = NULL;
+    char *token = strtok_r(inputBuffer->buffer, " ", &save_position);
+
+    char **tokens = malloc(sizeof(char *) * tkn_buf_size);
 
     if (!tokens) {
         printf("Error: unable to allocate memory for tokens");
-        closeInputBuffer(inputBuffer); // Clean up before exit.
+        close_input_buffer(inputBuffer); // Clean up before exit.
         exit(EXIT_FAILURE);
     }
 
-    tokens[tokenPosition++] = token;
+    tokens[tkn_position++] = token;
 
     while (token != 0) {
-        token = strtok_r(NULL, " ", &savePosition);
-        tokens[tokenPosition++] = token;
+        token = strtok_r(NULL, " ", &save_position);
+        tokens[tkn_position++] = token;
     }
 
-    tokens[tokenPosition] = NULL;
+    tokens[tkn_position] = NULL;
     return tokens;
 }
 
-void freeTokens(char **tokens) {
+void free_tokens(char **const tokens) {
     free(tokens);
 }
 
-void shellFork(char **args) {
+void shell_fork(char **const args) {
     pid_t pid;
     int status;
 
@@ -92,7 +98,7 @@ void shellFork(char **args) {
     if (pid == 0) {
         // Child process
         if (execvp(args[0], args) == -1) {
-            printCmdNotFound(args[0]);
+            print_cmd_not_found(args[0]);
         }
         exit(EXIT_FAILURE);
     } else if (pid == -1) {
@@ -113,25 +119,54 @@ void shellFork(char **args) {
     }
 }
 
+void load_ascii_art_from_file(char *filepath) {
+
+    FILE *fp = fopen(filepath, "r");
+    if(!fp) {
+        printf("Error opening ascii art file\n");
+        printf("*** SIMple SHell ***");
+    }
+
+    char *buffer = 0;
+    size_t buffer_len = 0;
+    size_t bytes_read = 0;
+
+    while (bytes_read != -1) {
+        bytes_read = getline(&buffer, &buffer_len, fp);
+        printf("%s", buffer);
+    }
+    fclose(fp);
+    free(buffer);
+}
+
 int main() {
-    InputBuffer *inputBuffer = newInputBuffer();
+    input_buffer_t *inputBuffer = new_input_buffer();
     char **tokens = NULL;
+
+    load_ascii_art_from_file("../banner.txt");
 
     while (1) {
         print_prompt();
 
         read_input(inputBuffer);
 
-        tokens = createTokens(inputBuffer);
+        tokens = create_tokens(inputBuffer);
 
         if (strcmp(inputBuffer->buffer, "exit") == 0) {
             printf("Quitting.\n");
-            closeInputBuffer(inputBuffer);
+            close_input_buffer(inputBuffer);
             free(tokens);
             exit(EXIT_SUCCESS);
+        } else if (strcmp(inputBuffer->buffer, "cd") == 0) {
+            if (chdir(tokens[1]) == -1) {
+                if (errno == ENOENT) {
+                    print_error("Directory does not exist");
+                }
+            }
+        } else {
+            shell_fork(tokens);
         }
 
-        shellFork(tokens);
-        freeTokens(tokens);
+        free_tokens(tokens);
     }
 }
