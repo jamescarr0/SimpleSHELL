@@ -5,7 +5,7 @@
 #include <sys/wait.h>
 #include <errno.h>
 
-#define PROMPT "(simple shell) ~ $ "
+#define PROMPT "(simsh) ~ $ "
 #define RESET_TEXT_COLOR "\x1b[0m"
 #define RED_TEXT "\x1b[31m"
 #define TOKEN_BUFSIZE 32
@@ -119,31 +119,47 @@ void shell_fork(char **const args) {
     }
 }
 
-void load_ascii_art_from_file(char *filepath) {
+void print_welcome_ascii_art(char const *const filepath) {
+
+//    printf("\e[8;40;80t"); // Set term size
 
     FILE *fp = fopen(filepath, "r");
-    if(!fp) {
+    if (!fp) {
         printf("Error opening ascii art file\n");
-        printf("*** SIMple SHell ***");
-    }
+        printf("*** SIMple SHell ***\n");
+    } else {
 
-    char *buffer = 0;
-    size_t buffer_len = 0;
-    size_t bytes_read = 0;
+        char *buffer = 0;
+        size_t buffer_len = 0;
+        size_t bytes_read = 0;
 
-    while (bytes_read != -1) {
-        bytes_read = getline(&buffer, &buffer_len, fp);
-        printf("%s", buffer);
+        while (bytes_read != -1) {
+            bytes_read = getline(&buffer, &buffer_len, fp);
+            printf("%s", buffer);
+        }
+        fclose(fp);
+        free(buffer);
     }
-    fclose(fp);
-    free(buffer);
+}
+
+void print_welcome_user() {
+    size_t user_buf_size = 64;
+    char *user_buf = malloc(sizeof(char) * user_buf_size);
+
+    getlogin_r(user_buf, user_buf_size);
+
+    printf("Welcome back, %s.\n\n", user_buf);
+
+    free(user_buf);
 }
 
 int main() {
     input_buffer_t *inputBuffer = new_input_buffer();
     char **tokens = NULL;
 
-    load_ascii_art_from_file("../banner.txt");
+    print_welcome_ascii_art("../banner.txt");
+
+    print_welcome_user();
 
     while (1) {
         print_prompt();
